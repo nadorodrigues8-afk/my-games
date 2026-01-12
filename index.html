@@ -1,13 +1,18 @@
-<script>
 let allGames = [];
 
-// Correct league names used by TheSportsDB
+// Updated league names that match TheSportsDB exactly
 const ELITE_LEAGUES = [
     "english premier league",
-    "primeira liga",
+    "spanish la liga",
+    "german bundesliga", 
+    "italian serie a",
+    "french ligue 1",
+    "portuguese primeira liga",
     "uefa champions league",
-    "fa cup",
-    "taça de portugal"
+    "uefa europa league",
+    "english fa cup",
+    "english league cup",
+    "copa del rey"
 ];
 
 function init() {
@@ -32,28 +37,57 @@ async function load(date) {
     const div = document.getElementById('list');
     div.innerHTML = "Fetching matches...";
     try {
-        const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`);
-        const data = await res.json();
+        // Try multiple API endpoints for better coverage
+        const urls = [
+            `https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`,
+            `https://www.thesportsdb.com/api/v1/json/1/eventsday.php?d=${date}&s=Soccer`
+        ];
+        
+        let allEvents = [];
+        
+        for (const url of urls) {
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.events) {
+                    allEvents = [...allEvents, ...data.events];
+                }
+            } catch (e) {
+                console.log(`Failed to fetch from ${url}:`, e);
+            }
+        }
 
-        if (!data.events) {
+        if (!allEvents.length) {
             div.innerHTML = `<div class="no-data">No matches found for ${date}</div>`;
             return;
         }
 
-        allGames = data.events.filter(g => {
+        // Remove duplicates
+        const uniqueEvents = allEvents.filter((event, index, self) => 
+            index === self.findIndex(e => e.idEvent === event.idEvent)
+        );
+
+        allGames = uniqueEvents.filter(g => {
             const league = g.strLeague?.toLowerCase() || "";
             const event = g.strEvent?.toLowerCase() || "";
+            const homeTeam = g.strHomeTeam?.toLowerCase() || "";
+            const awayTeam = g.strAwayTeam?.toLowerCase() || "";
 
             return (
-                ELITE_LEAGUES.some(l => league.includes(l)) ||
+                ELITE_LEAGUES.some(l => league.includes(l.toLowerCase())) ||
                 event.includes("porto") ||
-                event.includes("liverpool")
+                event.includes("liverpool") ||
+                homeTeam.includes("porto") ||
+                homeTeam.includes("liverpool") ||
+                awayTeam.includes("porto") ||
+                awayTeam.includes("liverpool")
             );
         });
 
         render(allGames, date);
     } catch (e) {
         div.innerHTML = "API error. Try again later.";
+        console.error("API Error:", e);
     }
 }
 
@@ -61,23 +95,32 @@ function render(list, date) {
     const div = document.getElementById('list');
 
     if (!list.length) {
-        div.innerHTML = `<div class="no-data">No elite matches found</div>`;
+        div.innerHTML = `<div class="no-data">No elite matches found for ${date}</div>`;
         return;
     }
 
     div.innerHTML = list.map(g => {
         let time = "TBD";
         if (g.strTime) {
-            time = new Date(`${g.dateEvent || date}T${g.strTime}Z`)
-                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            try {
+                time = new Date(`${g.dateEvent || date}T${g.strTime}`)
+                    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            } catch (e) {
+                time = g.strTime;
+            }
         }
+
+        const homeTeam = g.strHomeTeam || "";
+        const awayTeam = g.strAwayTeam || "";
+        const matchName = g.strEvent || `${homeTeam} vs ${awayTeam}`;
 
         return `
         <div class="game ${g.strSport}">
             <div class="info">
                 <span class="league">${g.strLeague}</span>
-                <div class="match">${g.strEvent}</div>
+                <div class="match">${matchName}</div>
                 <span class="time">${time} (Portugal)</span>
+                <div class="teams">${homeTeam} vs ${awayTeam}</div>
             </div>
         </div>`;
     }).join('');
@@ -85,8 +128,11 @@ function render(list, date) {
 
 function filter() {
     const q = document.getElementById('search').value.toLowerCase();
-    render(allGames.filter(g => g.strEvent.toLowerCase().includes(q)));
+    const filtered = allGames.filter(g => {
+        const searchText = `${g.strEvent} ${g.strHomeTeam} ${g.strAwayTeam} ${g.strLeague}`.toLowerCase();
+        return searchText.includes(q);
+    });
+    render(filtered);
 }
 
 init();
-</script>

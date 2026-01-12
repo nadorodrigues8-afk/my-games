@@ -3,46 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Private 365</title>
+    <title>Elite Sports Tracker</title>
     <style>
-        :root { --bg: #0b0e14; --card: #171c26; --accent: #00ff88; --text: #ffffff; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding-bottom: 50px; }
+        :root { --bg: #0b0e14; --card: #171c26; --accent: #00ff88; --nba: #38bdf8; --text: #ffffff; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding-bottom: 30px; }
         
-        /* Calendar Styling */
-        .calendar-nav { display: flex; overflow-x: auto; background: #1c222d; padding: 10px; gap: 10px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2d3545; }
-        .day-btn { min-width: 60px; padding: 10px; background: #2d3545; border-radius: 8px; text-align: center; cursor: pointer; border: none; color: white; }
+        /* Calendar Header */
+        .calendar-nav { display: flex; overflow-x: auto; background: #1c222d; padding: 12px; gap: 10px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2d3545; scrollbar-width: none; }
+        .day-btn { min-width: 60px; padding: 10px; background: #2d3545; border-radius: 8px; text-align: center; cursor: pointer; border: none; color: white; transition: 0.3s; }
         .day-btn.active { background: var(--accent); color: #000; font-weight: bold; }
-        .day-btn span { display: block; font-size: 0.7rem; opacity: 0.8; }
+        .day-btn span { display: block; font-size: 0.7rem; opacity: 0.7; }
 
-        .match-list { padding: 15px; }
-        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border-left: 4px solid #3d4455; }
-        .match-card.live { border-left-color: var(--accent); }
+        .container { padding: 15px; max-width: 600px; margin: auto; }
+        .section-title { font-size: 0.9rem; color: #8a94a6; text-transform: uppercase; margin: 20px 0 10px 5px; border-left: 3px solid var(--accent); padding-left: 10px; }
         
-        .league-header { font-size: 0.7rem; color: #8a94a6; text-transform: uppercase; margin-bottom: 8px; }
+        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border: 1px solid #2d3545; }
+        .match-card.live { border-left: 4px solid var(--accent); }
+        .match-card.basketball { border-left-color: var(--nba); }
+
         .teams { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; font-weight: 600; }
+        .score { font-size: 1.5rem; color: var(--accent); min-width: 60px; text-align: center; }
+        .nba-score { color: var(--nba); }
         
-        .status-box { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; }
-        .live-badge { color: var(--accent); font-weight: bold; animation: pulse 1.5s infinite; }
+        .status-row { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; border-top: 1px solid #2d3545; pt: 8px; }
+        .live-tag { color: var(--accent); font-weight: bold; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 
     <div class="calendar-nav" id="calendar"></div>
-    <div id="list" class="match-list">Selecting today's games...</div>
+    
+    <div class="container">
+        <div class="section-title">Football (Porto & Liverpool Focus)</div>
+        <div id="football-list">Syncing Football...</div>
+        
+        <div class="section-title">NBA Basketball</div>
+        <div id="nba-list">Syncing NBA...</div>
+    </div>
 
     <script>
         const API_KEY = "0c2062b801498d5ceee544538446d783";
         let selectedDate = new Date().toISOString().split('T')[0];
 
-        // 1. Setup the Calendar (7 Days)
-        function setupCalendar() {
+        function init() {
             const nav = document.getElementById('calendar');
             for (let i = -1; i < 6; i++) {
-                const d = new Date();
-                d.setDate(d.getDate() + i);
+                const d = new Date(); d.setDate(d.getDate() + i);
                 const dateStr = d.toISOString().split('T')[0];
-                
                 const btn = document.createElement('button');
                 btn.className = `day-btn ${dateStr === selectedDate ? 'active' : ''}`;
                 btn.innerHTML = `<span>${d.toLocaleDateString([], {weekday:'short'})}</span>${d.getDate()}`;
@@ -50,75 +58,19 @@
                     document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     selectedDate = dateStr;
-                    loadGames();
+                    refreshAll();
                 };
                 nav.appendChild(btn);
             }
+            refreshAll();
         }
 
-        // 2. Load Games for Selected Date
-        async function loadGames() {
-            const listDiv = document.getElementById('list');
-            listDiv.innerHTML = "Syncing scores...";
+        async function refreshAll() {
+            loadFootball();
+            loadNBA();
+        }
 
+        async function loadFootball() {
+            const list = document.getElementById('football-list');
             try {
-                // Fetch ALL games for the date
-                const res = await fetch(`https://v3.football.api-sports.io/fixtures?date=${selectedDate}`, {
-                    headers: { 'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io' }
-                });
-                const data = await res.json();
-
-                // Filters: Liverpool (33), Porto (211), PL (39), Liga Portugal (94)
-                const favTeams = [33, 211];
-                const eliteLeagues = [39, 94, 2, 3];
-
-                const games = data.response.filter(f => 
-                    favTeams.includes(f.teams.home.id) || 
-                    favTeams.includes(f.teams.away.id) ||
-                    eliteLeagues.includes(f.league.id)
-                );
-
-                render(games);
-            } catch (e) {
-                listDiv.innerHTML = "Check connection or API Key.";
-            }
-        }
-
-        // 3. Draw the games on screen
-        function render(matches) {
-            const listDiv = document.getElementById('list');
-            if (matches.length === 0) {
-                listDiv.innerHTML = "<div style='text-align:center; padding:50px; opacity:0.5;'>No games scheduled for this day.</div>";
-                return;
-            }
-
-            listDiv.innerHTML = matches.map(m => {
-                const status = m.fixture.status.short;
-                const isLive = ["1H", "2H", "HT", "ET", "P"].includes(status);
-                const time = new Date(m.fixture.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                
-                return `
-                <div class="match-card ${isLive ? 'live' : ''}">
-                    <div class="league-header">${m.league.name}</div>
-                    <div class="teams">
-                        <span>${m.teams.home.name}</span>
-                        <span style="color:var(--accent)">${m.goals.home ?? ''} - ${m.goals.away ?? ''}</span>
-                        <span>${m.teams.away.name}</span>
-                    </div>
-                    <div class="status-box">
-                        <span>${isLive ? `<span class="live-badge">LIVE ${m.fixture.status.elapsed}'</span>` : time}</span>
-                        <span style="opacity:0.6">${m.fixture.status.long}</span>
-                    </div>
-                </div>
-                `;
-            }).join('');
-        }
-
-        // Initial setup
-        setupCalendar();
-        loadGames();
-        // Refresh scores every 60 seconds automatically
-        setInterval(loadGames, 60000);
-    </script>
-</body>
-</html>
+                const res = await fetch(`

@@ -3,105 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elite Live Tracker</title>
+    <title>Elite Sports Tracker</title>
     <style>
         :root { --bg: #0b0e14; --card: #171c26; --accent: #00ff88; --text: #ffffff; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
-        .nav-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid #2d3545; }
-        .refresh-btn { background: var(--accent); color: #000; border: none; padding: 8px 15px; border-radius: 20px; font-weight: bold; cursor: pointer; }
-        .match-card { background: var(--card); border-radius: 12px; padding: 15px; margin-top: 15px; border: 1px solid #2d3545; }
-        .teams { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; }
-        .score { font-size: 1.5rem; color: var(--accent); font-weight: bold; width: 80px; text-align: center; }
-        #log-box { margin-top: 30px; font-size: 0.75rem; color: #8a94a6; background: #000; padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent); }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+        
+        /* Calendar Header */
+        .calendar-nav { display: flex; overflow-x: auto; background: #1c222d; padding: 12px; gap: 10px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2d3545; }
+        .day-btn { min-width: 55px; padding: 8px; background: #2d3545; border-radius: 8px; text-align: center; cursor: pointer; border: none; color: white; flex-shrink: 0; }
+        .day-btn.active { background: var(--accent); color: #000; font-weight: bold; }
+        .day-btn span { display: block; font-size: 0.65rem; text-transform: uppercase; }
+
+        .container { padding: 15px; }
+        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border: 1px solid #2d3545; }
+        .teams { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; font-weight: 600; }
+        .score { font-size: 1.4rem; color: var(--accent); min-width: 50px; text-align: center; }
+        .status-bar { margin-top: 10px; font-size: 0.8rem; color: #8a94a6; display: flex; justify-content: space-between; border-top: 1px solid #2d3545; padding-top: 8px; }
     </style>
 </head>
 <body>
 
-    <div class="nav-header">
-        <h2 style="margin:0; font-size: 1.1rem;">Elite Live Tracker</h2>
-        <button class="refresh-btn" onclick="loadEverything()">↻ Refresh</button>
+    <div class="calendar-nav" id="calendar"></div>
+    
+    <div class="container" id="match-list">
+        <p style="text-align:center; opacity:0.5; padding:40px;">Select a date to view games...</p>
     </div>
-
-    <div id="display-area">
-        <p style="text-align:center; padding:40px; opacity:0.5;">Establishing Secure Connection...</p>
-    </div>
-
-    <div id="log-box">System: Waiting for data...</div>
 
     <script>
         const API_KEY = "0c2062b801498d5ceee544538446d783";
-        
-        function updateLog(msg) {
-            document.getElementById('log-box').innerText = `Status: ${msg}`;
-        }
+        let selectedDate = new Date().toISOString().split('T')[0];
 
-        async function loadEverything() {
-            const display = document.getElementById('display-area');
-            updateLog("Connecting to API via Proxy...");
-            
-            try {
-                const today = new Date().toISOString().split('T')[0];
-                // Using a proxy ensures the connection isn't blocked by GitHub's security
-                const url = `https://v3.football.api-sports.io/fixtures?date=${today}`;
+        // 1. Build the Calendar
+        function initCalendar() {
+            const nav = document.getElementById('calendar');
+            for (let i = 0; i < 7; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() + i);
+                const dateStr = d.toISOString().split('T')[0];
                 
-                const res = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'x-rapidapi-key': API_KEY,
-                        'x-rapidapi-host': 'v3.football.api-sports.io'
-                    }
-                });
-                
-                const data = await res.json();
-                
-                if (!data.response || data.response.length === 0) {
-                    updateLog("Connected! No games found for today.");
-                    display.innerHTML = `<p style="text-align:center; padding:40px; opacity:0.5;">No games scheduled today.</p>`;
-                    return;
-                }
-
-                // Filtering for Porto (211), Liverpool (33), and Top Leagues
-                const filtered = data.response.filter(m => 
-                    [33, 211].includes(m.teams.home.id) || 
-                    [33, 211].includes(m.teams.away.id) ||
-                    [39, 94].includes(m.league.id)
-                );
-
-                updateLog(`Online. Found ${filtered.length} matches.`);
-                render(filtered);
-
-            } catch (err) {
-                updateLog("Connection Error: " + err.message);
-                display.innerHTML = `<p style="text-align:center; color:#ff4444;">Could not sync data. Check if your API key is active.</p>`;
+                const btn = document.createElement('button');
+                btn.className = `day-btn ${dateStr === selectedDate ? 'active' : ''}`;
+                btn.innerHTML = `<span>${d.toLocaleDateString([], {weekday:'short'})}</span>${d.getDate()}`;
+                btn.onclick = () => {
+                    document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    selectedDate = dateStr;
+                    fetchData();
+                };
+                nav.appendChild(btn);
             }
         }
 
-        function render(matches) {
-            const display = document.getElementById('display-area');
-            display.innerHTML = matches.map(m => {
-                const status = m.fixture.status.short;
-                const isLive = ["1H", "2H", "HT"].includes(status);
-                const time = new Date(m.fixture.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        // 2. Fetch Data for the Date
+        async function fetchData() {
+            const list = document.getElementById('match-list');
+            list.innerHTML = "<p style='text-align:center; padding:40px;'>Syncing scores...</p>";
+            
+            try {
+                const res = await fetch(`https://v3.football.api-sports.io/fixtures?date=${selectedDate}`, {
+                    headers: { 'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io' }
+                });
+                const data = await res.json();
                 
+                // IDs: Liverpool(33), Porto(211), PL(39), Liga Portugal(94)
+                const filtered = data.response.filter(m => 
+                    [33, 211].includes(m.teams.home.id) || [33, 211].includes(m.teams.away.id) || 
+                    [39, 94, 2, 3].includes(m.league.id)
+                );
+
+                render(filtered);
+            } catch (e) {
+                list.innerHTML = "<p style='text-align:center; color:red;'>Connection Error.</p>";
+            }
+        }
+
+        // 3. Render Matches
+        function render(matches) {
+            const list = document.getElementById('match-list');
+            if (matches.length === 0) {
+                list.innerHTML = "<p style='text-align:center; padding:40px; opacity:0.5;'>No games for Liverpool, Porto, or Elite Leagues on this day.</p>";
+                return;
+            }
+
+            list.innerHTML = matches.map(m => {
+                const isLive = ["1H", "2H", "HT"].includes(m.fixture.status.short);
+                const time = new Date(m.fixture.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 return `
                     <div class="match-card">
-                        <div style="font-size: 0.7rem; color: #8a94a6;">${m.league.name}</div>
+                        <div style="font-size: 0.65rem; color: #8a94a6; text-transform: uppercase; margin-bottom:8px;">${m.league.name}</div>
                         <div class="teams">
                             <span style="flex:1;">${m.teams.home.name}</span>
                             <span class="score">${m.goals.home ?? 0} : ${m.goals.away ?? 0}</span>
                             <span style="flex:1; text-align:right;">${m.teams.away.name}</span>
                         </div>
-                        <div style="font-size: 0.8rem; color:${isLive ? '#00ff88' : '#8a94a6'}">
-                            ${isLive ? '● LIVE ' + m.fixture.status.elapsed + "'" : 'Starts at ' + time}
+                        <div class="status-bar">
+                            <span style="color:${isLive ? '#00ff88' : ''}">${isLive ? '● LIVE ' + m.fixture.status.elapsed + "'" : 'Kickoff: ' + time}</span>
+                            <span>${m.fixture.status.long}</span>
                         </div>
                     </div>
                 `;
             }).join('');
         }
 
-        // Run immediately
-        loadEverything();
+        initCalendar();
+        fetchData();
     </script>
 </body>
 </html>
-

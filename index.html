@@ -3,74 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elite Sports Tracker</title>
+    <title>Private 365 Scores v2</title>
     <style>
-        :root { --bg: #0b0e14; --card: #171c26; --accent: #00ff88; --nba: #38bdf8; --text: #ffffff; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding-bottom: 30px; }
+        :root { --bg: #0b0e14; --card: #171c26; --accent: #00ff88; --text: #ffffff; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
         
-        /* Calendar Header */
-        .calendar-nav { display: flex; overflow-x: auto; background: #1c222d; padding: 12px; gap: 10px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2d3545; scrollbar-width: none; }
-        .day-btn { min-width: 60px; padding: 10px; background: #2d3545; border-radius: 8px; text-align: center; cursor: pointer; border: none; color: white; transition: 0.3s; }
-        .day-btn.active { background: var(--accent); color: #000; font-weight: bold; }
-        .day-btn span { display: block; font-size: 0.7rem; opacity: 0.7; }
-
-        .container { padding: 15px; max-width: 600px; margin: auto; }
-        .section-title { font-size: 0.9rem; color: #8a94a6; text-transform: uppercase; margin: 20px 0 10px 5px; border-left: 3px solid var(--accent); padding-left: 10px; }
+        .nav-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid #2d3545; }
+        .refresh-btn { background: var(--accent); color: #000; border: none; padding: 8px 15px; border-radius: 20px; font-weight: bold; cursor: pointer; }
         
-        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border: 1px solid #2d3545; }
+        .match-card { background: var(--card); border-radius: 12px; padding: 15px; margin-top: 15px; border: 1px solid #2d3545; }
         .match-card.live { border-left: 4px solid var(--accent); }
-        .match-card.basketball { border-left-color: var(--nba); }
-
-        .teams { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; font-weight: 600; }
-        .score { font-size: 1.5rem; color: var(--accent); min-width: 60px; text-align: center; }
-        .nba-score { color: var(--nba); }
         
-        .status-row { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; border-top: 1px solid #2d3545; pt: 8px; }
-        .live-tag { color: var(--accent); font-weight: bold; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        .teams { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; }
+        .score { font-size: 1.5rem; color: var(--accent); font-weight: bold; width: 80px; text-align: center; }
+        
+        #log { margin-top: 30px; font-size: 0.7rem; color: #64748b; background: #000; padding: 10px; border-radius: 8px; font-family: monospace; }
     </style>
 </head>
 <body>
 
-    <div class="calendar-nav" id="calendar"></div>
-    
-    <div class="container">
-        <div class="section-title">Football (Porto & Liverpool Focus)</div>
-        <div id="football-list">Syncing Football...</div>
-        
-        <div class="section-title">NBA Basketball</div>
-        <div id="nba-list">Syncing NBA...</div>
+    <div class="nav-header">
+        <h2 style="margin:0; font-size: 1.1rem;">Elite Live Tracker</h2>
+        <button class="refresh-btn" onclick="loadEverything()">↻ Refresh</button>
     </div>
+
+    <div id="display-area">
+        <p style="text-align:center; padding:40px; opacity:0.5;">Connecting to Sports API...</p>
+    </div>
+
+    <div id="log">System Initializing...</div>
 
     <script>
         const API_KEY = "0c2062b801498d5ceee544538446d783";
-        let selectedDate = new Date().toISOString().split('T')[0];
+        const log = (msg) => { document.getElementById('log').innerText = `> ${msg}`; };
 
-        function init() {
-            const nav = document.getElementById('calendar');
-            for (let i = -1; i < 6; i++) {
-                const d = new Date(); d.setDate(d.getDate() + i);
-                const dateStr = d.toISOString().split('T')[0];
-                const btn = document.createElement('button');
-                btn.className = `day-btn ${dateStr === selectedDate ? 'active' : ''}`;
-                btn.innerHTML = `<span>${d.toLocaleDateString([], {weekday:'short'})}</span>${d.getDate()}`;
-                btn.onclick = () => {
-                    document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    selectedDate = dateStr;
-                    refreshAll();
-                };
-                nav.appendChild(btn);
-            }
-            refreshAll();
-        }
-
-        async function refreshAll() {
-            loadFootball();
-            loadNBA();
-        }
-
-        async function loadFootball() {
-            const list = document.getElementById('football-list');
+        async function loadEverything() {
+            const display = document.getElementById('display-area');
+            log("Fetching latest scores...");
+            
             try {
-                const res = await fetch(`
+                // We use 'today' to get the full schedule + live scores
+                const today = new Date().toISOString().split('T')[0];
+                const res = await fetch(`https://v3.football.api-sports.io/fixtures?date=${today}`, {
+                    headers: { 'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io' }
+                });
+                
+                const data = await res.json();
+                
+                if (data.errors && data.errors.length > 0) {
+                    log("API ERROR: " + JSON.stringify(data.errors));
+                    return;
+                }
+
+                // Filter for Liverpool(33), Porto

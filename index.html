@@ -1,92 +1,87 @@
-<script>
-let allGames = [];
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Private 365</title>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #00ff88; --text: #f8fafc; --nba: #38bdf8; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border-left: 5px solid #334155; }
+        .match-card.live { border-left-color: var(--accent); }
+        .match-card.basketball { border-left-color: var(--nba); }
+        .league-name { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+        .teams-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; font-size: 1.1rem; font-weight: bold; }
+        .score { font-size: 1.4rem; color: var(--accent); }
+        .status { font-size: 0.8rem; font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #334155; }
+        .live-pulse { color: var(--accent); animation: blink 1.5s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2 style="margin:0; font-size: 1.2rem;">Live Tracker</h2>
+        <div id="last-update" style="font-size: 0.7rem; color: #94a3b8;">Updating...</div>
+    </div>
+    <div id="match-list">Searching for Liverpool, Porto, and NBA...</div>
 
-// Correct league names used by TheSportsDB
-const ELITE_LEAGUES = [
-    "english premier league",
-    "primeira liga",
-    "uefa champions league",
-    "fa cup",
-    "taça de portugal"
-];
+    <script>
+        const API_KEY = "0c2062b801498d5ceee544538446d783";
 
-function init() {
-    const cal = document.getElementById('cal');
-    for (let i = 0; i < 7; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() + i);
-        const btn = document.createElement('div');
-        btn.className = `day ${i === 0 ? 'active' : ''}`;
-        btn.innerHTML = `<div>${d.toLocaleDateString([], { weekday: 'short' })}</div><div>${d.getDate()}</div>`;
-        btn.onclick = () => {
-            document.querySelectorAll('.day').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            load(d.toISOString().split('T')[0]);
-        };
-        cal.appendChild(btn);
-    }
-    load(new Date().toISOString().split('T')[0]);
-}
+        async function fetchGames() {
+            const list = document.getElementById('match-list');
+            try {
+                // Fetching Live Football (Premier League, Liga Portugal, etc.)
+                const res = await fetch('https://v3.football.api-sports.io/fixtures?live=all', {
+                    headers: { 'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io' }
+                });
+                const data = await res.json();
+                
+                // Priority Filter: Liverpool (33), Porto (211), and Major Leagues
+                const eliteLeagues = [39, 94, 2, 3, 140, 135, 78, 61]; 
+                const matches = (data.response || []).filter(m => 
+                    eliteLeagues.includes(m.league.id) || 
+                    m.teams.home.id === 33 || m.teams.away.id === 33 || 
+                    m.teams.home.id === 211 || m.teams.away.id === 211
+                );
 
-async function load(date) {
-    const div = document.getElementById('list');
-    div.innerHTML = "Fetching matches...";
-    try {
-        const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`);
-        const data = await res.json();
-
-        if (!data.events) {
-            div.innerHTML = `<div class="no-data">No matches found for ${date}</div>`;
-            return;
+                render(matches);
+                document.getElementById('last-update').innerText = "Last update: " + new Date().toLocaleTimeString();
+            } catch (e) {
+                list.innerHTML = "Connection Error. Refreshing...";
+            }
         }
 
-        allGames = data.events.filter(g => {
-            const league = g.strLeague?.toLowerCase() || "";
-            const event = g.strEvent?.toLowerCase() || "";
+        function render(matches) {
+            const list = document.getElementById('match-list');
+            if (matches.length === 0) {
+                list.innerHTML = "<div style='text-align:center; padding:20px; color:#94a3b8;'>No live games for your teams right now. Checking again in 60s.</div>";
+                return;
+            }
 
-            return (
-                ELITE_LEAGUES.some(l => league.includes(l)) ||
-                event.includes("porto") ||
-                event.includes("liverpool")
-            );
-        });
-
-        render(allGames, date);
-    } catch (e) {
-        div.innerHTML = "API error. Try again later.";
-    }
-}
-
-function render(list, date) {
-    const div = document.getElementById('list');
-
-    if (!list.length) {
-        div.innerHTML = `<div class="no-data">No elite matches found</div>`;
-        return;
-    }
-
-    div.innerHTML = list.map(g => {
-        let time = "TBD";
-        if (g.strTime) {
-            time = new Date(`${g.dateEvent || date}T${g.strTime}Z`)
-                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            list.innerHTML = matches.map(m => {
+                const isLive = m.fixture.status.short !== 'FT' && m.fixture.status.short !== 'NS';
+                return `
+                <div class="match-card ${isLive ? 'live' : ''}">
+                    <div class="league-name">${m.league.name}</div>
+                    <div class="teams-row">
+                        <span style="flex:1;">${m.teams.home.name}</span>
+                        <span class="score">${m.goals.home} - ${m.goals.away}</span>
+                        <span style="flex:1; text-align:right;">${m.teams.away.name}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="status ${isLive ? 'live-pulse' : ''}">${m.fixture.status.elapsed}'</span>
+                        <span style="font-size:0.7rem; color:#94a3b8;">${m.fixture.status.long}</span>
+                    </div>
+                </div>
+                `;
+            }).join('');
         }
 
-        return `
-        <div class="game ${g.strSport}">
-            <div class="info">
-                <span class="league">${g.strLeague}</span>
-                <div class="match">${g.strEvent}</div>
-                <span class="time">${time} (Portugal)</span>
-            </div>
-        </div>`;
-    }).join('');
-}
-
-function filter() {
-    const q = document.getElementById('search').value.toLowerCase();
-    render(allGames.filter(g => g.strEvent.toLowerCase().includes(q)));
-}
-
-init();
-</script>
+        // Auto-refresh every 60 seconds (Standard for score apps)
+        setInterval(fetchGames, 60000);
+        fetchGames();
+    </script>
+</body>
+</html>

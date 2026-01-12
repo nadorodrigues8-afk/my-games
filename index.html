@@ -6,34 +6,41 @@
     <title>Elite Sports Tracker</title>
     <style>
         :root { --bg: #0b0e14; --card: #171c26; --accent: #00ff88; --text: #ffffff; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; padding-bottom: 30px; }
         
         .calendar-nav { display: flex; overflow-x: auto; background: #1c222d; padding: 12px; gap: 10px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2d3545; scrollbar-width: none; }
         .day-btn { min-width: 55px; padding: 8px; background: #2d3545; border-radius: 8px; text-align: center; cursor: pointer; border: none; color: white; flex-shrink: 0; }
         .day-btn.active { background: var(--accent); color: #000; font-weight: bold; }
         .day-btn span { display: block; font-size: 0.65rem; text-transform: uppercase; margin-bottom: 2px; }
 
-        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
-        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border: 1px solid #2d3545; transition: transform 0.2s; }
-        .teams { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; font-weight: 600; gap: 10px; }
-        .score { font-size: 1.6rem; color: var(--accent); min-width: 70px; text-align: center; font-variant-numeric: tabular-nums; }
+        .search-container { padding: 15px; }
+        #teamSearch { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #2d3545; background: #1c222d; color: white; box-sizing: border-box; }
+
+        .container { padding: 0 15px; max-width: 600px; margin: 0 auto; }
+        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border: 1px solid #2d3545; }
+        .teams { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; font-weight: 600; }
+        .score { font-size: 1.6rem; color: var(--accent); min-width: 60px; text-align: center; }
         
-        .status-bar { margin-top: 12px; font-size: 0.8rem; color: #8a94a6; display: flex; justify-content: space-between; border-top: 1px solid #2d3545; padding-top: 10px; }
-        .live-dot { display: inline-block; width: 8px; height: 8px; background: var(--accent); border-radius: 50%; margin-right: 5px; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .status-bar { margin-top: 10px; font-size: 0.8rem; color: #8a94a6; display: flex; justify-content: space-between; border-top: 1px solid #2d3545; padding-top: 8px; }
+        .live-tag { color: var(--accent); font-weight: bold; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 
     <div class="calendar-nav" id="calendar"></div>
     
+    <div class="search-container">
+        <input type="text" id="teamSearch" placeholder="Search team (Porto, Liverpool...)" oninput="filterMatches()">
+    </div>
+    
     <div class="container" id="match-list">
-        <p style="text-align:center; opacity:0.5; padding:40px;">Initializing Tracker...</p>
+        <p style="text-align:center; opacity:0.5; padding:40px;">Syncing data...</p>
     </div>
 
     <script>
-        // CRITICAL FIX: Direct API-Sports calls use 'x-apisports-key'
         const API_KEY = "0c2062b801498d5ceee544538446d783";
+        let allMatches = [];
         let selectedDate = new Date().toISOString().split('T')[0];
 
         function initCalendar() {
@@ -42,7 +49,6 @@
                 const d = new Date();
                 d.setDate(d.getDate() + i);
                 const dateStr = d.toISOString().split('T')[0];
-                
                 const btn = document.createElement('button');
                 btn.className = `day-btn ${dateStr === selectedDate ? 'active' : ''}`;
                 btn.innerHTML = `<span>${d.toLocaleDateString([], {weekday:'short'})}</span>${d.getDate()}`;
@@ -59,39 +65,65 @@
         async function fetchData() {
             const list = document.getElementById('match-list');
             try {
-                // Corrected Header Logic
+                // FIXED HEADER: x-apisports-key is required
                 const res = await fetch(`https://v3.football.api-sports.io/fixtures?date=${selectedDate}`, {
                     headers: { 'x-apisports-key': API_KEY }
                 });
-                
                 const data = await res.json();
                 
-                if (data.errors && Object.keys(data.errors).length > 0) {
-                    throw new Error(JSON.stringify(data.errors));
-                }
-
-                // Filtering: PL(39), Liga Portugal(94), UCL(2), UEL(3) + Porto(211), Liverpool(33)
-                const filtered = (data.response || []).filter(m => 
-                    [2, 3, 39, 94].includes(m.league.id) || 
+                // League Filter: PL(39), Liga Portugal(94), UCL(2), UEL(3)
+                allMatches = (data.response || []).filter(m => 
+                    [39, 94, 2, 3].includes(m.league.id) || 
                     [33, 211].includes(m.teams.home.id) || 
                     [33, 211].includes(m.teams.away.id)
                 );
 
-                render(filtered);
+                filterMatches();
             } catch (e) {
-                console.error(e);
-                list.innerHTML = `<p style='text-align:center; color:#ff4b4b; padding:20px;'>API Connection Error. Verify your key at api-football.com.</p>`;
+                list.innerHTML = "<p style='text-align:center; color:#ff4b4b;'>Connection Error.</p>";
             }
+        }
+
+        function filterMatches() {
+            const searchTerm = document.getElementById('teamSearch').value.toLowerCase();
+            const filtered = allMatches.filter(m => 
+                m.teams.home.name.toLowerCase().includes(searchTerm) || 
+                m.teams.away.name.toLowerCase().includes(searchTerm)
+            );
+            render(filtered);
         }
 
         function render(matches) {
             const list = document.getElementById('match-list');
             if (matches.length === 0) {
-                list.innerHTML = "<p style='text-align:center; padding:40px; opacity:0.5;'>No games found for your selected leagues or teams today.</p>";
+                list.innerHTML = `<p style="text-align:center; padding:40px; opacity:0.5;">No games found for this day.</p>`;
                 return;
             }
 
             list.innerHTML = matches.map(m => {
-                const status = m.fixture.status.short;
-                const isLive = ["1H", "2H", "HT", "ET", "P"].includes(status);
+                const isLive = ["1H", "2H", "HT"].includes(m.fixture.status.short);
                 const time = new Date(m.fixture.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                return `
+                    <div class="match-card">
+                        <div style="font-size: 0.65rem; color: #8a94a6; text-transform: uppercase; margin-bottom:8px;">${m.league.name}</div>
+                        <div class="teams">
+                            <span style="flex:1;">${m.teams.home.name}</span>
+                            <span class="score">${m.goals.home ?? 0} : ${m.goals.away ?? 0}</span>
+                            <span style="flex:1; text-align:right;">${m.teams.away.name}</span>
+                        </div>
+                        <div class="status-bar">
+                            <span class="${isLive ? 'live-tag' : ''}">${isLive ? '● LIVE ' + m.fixture.status.elapsed + "'" : 'Kickoff: ' + time}</span>
+                            <span>${m.fixture.status.long}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        initCalendar();
+        fetchData();
+        setInterval(fetchData, 60000); // Auto-refresh
+    </script>
+</body>
+</html>
+

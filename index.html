@@ -6,19 +6,21 @@
     <title>Elite Sports Tracker</title>
     <style>
         :root { --bg: #0b0e14; --card: #171c26; --accent: #00ff88; --text: #ffffff; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; }
         
-        /* Calendar Header */
-        .calendar-nav { display: flex; overflow-x: auto; background: #1c222d; padding: 12px; gap: 10px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2d3545; }
+        .calendar-nav { display: flex; overflow-x: auto; background: #1c222d; padding: 12px; gap: 10px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #2d3545; scrollbar-width: none; }
         .day-btn { min-width: 55px; padding: 8px; background: #2d3545; border-radius: 8px; text-align: center; cursor: pointer; border: none; color: white; flex-shrink: 0; }
         .day-btn.active { background: var(--accent); color: #000; font-weight: bold; }
-        .day-btn span { display: block; font-size: 0.65rem; text-transform: uppercase; }
+        .day-btn span { display: block; font-size: 0.65rem; text-transform: uppercase; margin-bottom: 2px; }
 
-        .container { padding: 15px; }
-        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border: 1px solid #2d3545; }
-        .teams { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; font-weight: 600; }
-        .score { font-size: 1.4rem; color: var(--accent); min-width: 50px; text-align: center; }
-        .status-bar { margin-top: 10px; font-size: 0.8rem; color: #8a94a6; display: flex; justify-content: space-between; border-top: 1px solid #2d3545; padding-top: 8px; }
+        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
+        .match-card { background: var(--card); border-radius: 12px; padding: 18px; margin-bottom: 12px; border: 1px solid #2d3545; transition: transform 0.2s; }
+        .teams { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; font-weight: 600; gap: 10px; }
+        .score { font-size: 1.6rem; color: var(--accent); min-width: 70px; text-align: center; font-variant-numeric: tabular-nums; }
+        
+        .status-bar { margin-top: 12px; font-size: 0.8rem; color: #8a94a6; display: flex; justify-content: space-between; border-top: 1px solid #2d3545; padding-top: 10px; }
+        .live-dot { display: inline-block; width: 8px; height: 8px; background: var(--accent); border-radius: 50%; margin-right: 5px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
@@ -26,14 +28,14 @@
     <div class="calendar-nav" id="calendar"></div>
     
     <div class="container" id="match-list">
-        <p style="text-align:center; opacity:0.5; padding:40px;">Select a date to view games...</p>
+        <p style="text-align:center; opacity:0.5; padding:40px;">Initializing Tracker...</p>
     </div>
 
     <script>
+        // CRITICAL FIX: Direct API-Sports calls use 'x-apisports-key'
         const API_KEY = "0c2062b801498d5ceee544538446d783";
         let selectedDate = new Date().toISOString().split('T')[0];
 
-        // 1. Build the Calendar
         function initCalendar() {
             const nav = document.getElementById('calendar');
             for (let i = 0; i < 7; i++) {
@@ -54,59 +56,42 @@
             }
         }
 
-        // 2. Fetch Data for the Date
         async function fetchData() {
             const list = document.getElementById('match-list');
-            list.innerHTML = "<p style='text-align:center; padding:40px;'>Syncing scores...</p>";
-            
             try {
+                // Corrected Header Logic
                 const res = await fetch(`https://v3.football.api-sports.io/fixtures?date=${selectedDate}`, {
-                    headers: { 'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io' }
+                    headers: { 'x-apisports-key': API_KEY }
                 });
+                
                 const data = await res.json();
                 
-                // IDs: Liverpool(33), Porto(211), PL(39), Liga Portugal(94)
-                const filtered = data.response.filter(m => 
-                    [33, 211].includes(m.teams.home.id) || [33, 211].includes(m.teams.away.id) || 
-                    [39, 94, 2, 3].includes(m.league.id)
+                if (data.errors && Object.keys(data.errors).length > 0) {
+                    throw new Error(JSON.stringify(data.errors));
+                }
+
+                // Filtering: PL(39), Liga Portugal(94), UCL(2), UEL(3) + Porto(211), Liverpool(33)
+                const filtered = (data.response || []).filter(m => 
+                    [2, 3, 39, 94].includes(m.league.id) || 
+                    [33, 211].includes(m.teams.home.id) || 
+                    [33, 211].includes(m.teams.away.id)
                 );
 
                 render(filtered);
             } catch (e) {
-                list.innerHTML = "<p style='text-align:center; color:red;'>Connection Error.</p>";
+                console.error(e);
+                list.innerHTML = `<p style='text-align:center; color:#ff4b4b; padding:20px;'>API Connection Error. Verify your key at api-football.com.</p>`;
             }
         }
 
-        // 3. Render Matches
         function render(matches) {
             const list = document.getElementById('match-list');
             if (matches.length === 0) {
-                list.innerHTML = "<p style='text-align:center; padding:40px; opacity:0.5;'>No games for Liverpool, Porto, or Elite Leagues on this day.</p>";
+                list.innerHTML = "<p style='text-align:center; padding:40px; opacity:0.5;'>No games found for your selected leagues or teams today.</p>";
                 return;
             }
 
             list.innerHTML = matches.map(m => {
-                const isLive = ["1H", "2H", "HT"].includes(m.fixture.status.short);
+                const status = m.fixture.status.short;
+                const isLive = ["1H", "2H", "HT", "ET", "P"].includes(status);
                 const time = new Date(m.fixture.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                return `
-                    <div class="match-card">
-                        <div style="font-size: 0.65rem; color: #8a94a6; text-transform: uppercase; margin-bottom:8px;">${m.league.name}</div>
-                        <div class="teams">
-                            <span style="flex:1;">${m.teams.home.name}</span>
-                            <span class="score">${m.goals.home ?? 0} : ${m.goals.away ?? 0}</span>
-                            <span style="flex:1; text-align:right;">${m.teams.away.name}</span>
-                        </div>
-                        <div class="status-bar">
-                            <span style="color:${isLive ? '#00ff88' : ''}">${isLive ? '● LIVE ' + m.fixture.status.elapsed + "'" : 'Kickoff: ' + time}</span>
-                            <span>${m.fixture.status.long}</span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        initCalendar();
-        fetchData();
-    </script>
-</body>
-</html>

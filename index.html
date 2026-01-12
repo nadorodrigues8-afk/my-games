@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elite Football Tracker</title>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        .header-fixed { padding: 15px; background: #161e31; border-bottom: 2px solid #334155; flex-shrink: 0; }
+        .calendar-nav { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 10px; scrollbar-width: none; }
+        .day-btn { min-width: 55px; padding: 8px; border-radius: 10px; background: var(--card); border: 1px solid #334155; color: white; text-align: center; cursor: pointer; flex-shrink: 0; }
+        .day-btn.active { background: var(--accent); color: var(--bg); font-weight: bold; }
+        
+        input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--accent); background: var(--card); color: white; box-sizing: border-box; outline: none; }
+        
+        #list { flex-grow: 1; overflow-y: auto; padding: 15px; -webkit-overflow-scrolling: touch; }
+        .game-card { background: var(--card); padding: 15px; border-radius: 12px; margin-bottom: 12px; border-left: 5px solid var(--accent); display: flex; align-items: center; gap: 15px; }
+        .badge { width: 40px; height: 40px; object-fit: contain; background: #fff; border-radius: 50%; padding: 2px; flex-shrink: 0; }
+        .game-info { flex-grow: 1; }
+        .league-name { font-size: 0.7rem; font-weight: bold; color: var(--accent); text-transform: uppercase; }
+        .teams { font-size: 1.05rem; font-weight: 600; margin: 2px 0; }
+        .time { font-size: 0.85rem; color: #94a3b8; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="header-fixed">
+        <div class="calendar-nav" id="calendar"></div>
+        <input type="text" id="search" placeholder="Search team (Porto, Liverpool...)" onkeyup="filter()">
+    </div>
+
+    <div id="list">Checking for live matches...</div>
+
+    <script>
+        let allGames = [];
+        const TOP_LEAGUES = [
+            "English Premier League", "Portuguese Primera Liga", "Spanish La Liga", 
+            "Italian Serie A", "German Bundesliga", "French Ligue 1", 
+            "UEFA Champions League", "FA Cup"
+        ];
+
+        function initCalendar() {
+            const cal = document.getElementById('calendar');
+            for (let i = 0; i < 7; i++) {
+                const date = new Date();
+                date.setDate(date.getDate() + i);
+                const dayName = date.toLocaleDateString([], { weekday: 'short' });
+                const dayNum = date.getDate();
+                const fullDate = date.toISOString().split('T')[0];
+
+                const btn = document.createElement('div');
+                btn.className = `day-btn ${i === 0 ? 'active' : ''}`;
+                btn.innerHTML = `<div>${dayName}</div><div>${dayNum}</div>`;
+                btn.onclick = () => {
+                    document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    loadGames(fullDate);
+                };
+                cal.appendChild(btn);
+            }
+        }
+
+        async function loadGames(dateStr) {
+            const listDiv = document.getElementById('list');
+            listDiv.innerHTML = "Fetching Elite Leagues...";
+            try {
+                const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${dateStr}&s=Soccer`);
+                const data = await res.json();
+                
+                allGames = (data.events || []).filter(g => 
+                    TOP_LEAGUES.some(top => g.strLeague.includes(top))
+                );
+                
+                render(allGames, dateStr);
+            } catch (e) {
+                listDiv.innerHTML = "Error: Use a hosted link (Tiiny/Netlify) to view games!";
+            }
+        }
+
+        function render(list, dateStr) {
+            const container = document.getElementById('list');
+            if (list.length === 0) {
+                container.innerHTML = "No Elite League games found for this date.";
+                return;
+            }
+            container.innerHTML = list.map(g => {
+                const localTime = new Date(`${g.dateEvent || dateStr}T${g.strTime}Z`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                
+                return `
+                <div class="game-card">
+                    <img class="badge" src="https://www.thesportsdb.com/images/media/league/badge/small/${g.idLeague}.png" onerror="this.style.display='none'">
+                    <div class="game-info">
+                        <span class="league-name">${g.strLeague}</span>
+                        <div class="teams">${g.strEvent}</div>
+                        <span class="time">${localTime} (Local Time)</span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function filter() {
+            const q = document.getElementById('search').value.toLowerCase();
+            render(allGames.filter(g => g.strEvent.toLowerCase().includes(q)));
+        }
+
+        initCalendar();
+        loadGames(new Date().toISOString().split('T')[0]);
+    </script>
+</body>
+</html>

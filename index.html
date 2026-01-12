@@ -1,110 +1,92 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elite Sports Tracker</title>
-    <style>
-        :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --nba: #ef4444; --soccer: #22c55e; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        .header { padding: 15px; background: #161e31; border-bottom: 2px solid #334155; flex-shrink: 0; }
-        .calendar { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
-        .day { min-width: 50px; padding: 10px; border-radius: 8px; background: var(--card); text-align: center; cursor: pointer; border: 1px solid #334155; }
-        .day.active { background: var(--accent); color: var(--bg); font-weight: bold; }
-        #list { flex-grow: 1; overflow-y: auto; padding: 15px; }
-        .game { background: var(--card); padding: 15px; border-radius: 12px; margin-bottom: 12px; border-left: 5px solid var(--accent); display: flex; align-items: center; gap: 12px; }
-        .Basketball { border-left-color: var(--nba); }
-        .Soccer { border-left-color: var(--soccer); }
-        .info { flex-grow: 1; }
-        .league { font-size: 0.7rem; color: var(--accent); font-weight: bold; text-transform: uppercase; }
-        .match { font-size: 1.05rem; font-weight: 600; margin: 2px 0; }
-        .time { font-size: 0.85rem; color: #94a3b8; font-weight: bold; }
-        .no-data { text-align: center; padding: 40px; color: #94a3b8; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <div class="calendar" id="cal"></div>
-        <input type="text" id="search" placeholder="Search Porto, Liverpool, NBA..." onkeyup="filter()" style="width:100%; padding:12px; border-radius:8px; border:none; background:var(--card); color:white; margin-top:10px; outline:none;">
-    </div>
-    <div id="list">Connecting to live scores...</div>
+<script>
+let allGames = [];
 
-    <script>
-        let allGames = [];
-        // Strictly watching the leagues you care about
-        const ELITE_LEAGUES = ["Premier League", "Primera Liga", "NBA", "Champions League", "FA Cup", "Taça"];
+// Correct league names used by TheSportsDB
+const ELITE_LEAGUES = [
+    "english premier league",
+    "primeira liga",
+    "uefa champions league",
+    "fa cup",
+    "taça de portugal"
+];
 
-        function init() {
-            const cal = document.getElementById('cal');
-            for(let i=0; i<7; i++) {
-                const d = new Date(); d.setDate(d.getDate()+i);
-                const btn = document.createElement('div');
-                btn.className = `day ${i===0?'active':''}`;
-                btn.innerHTML = `<div>${d.toLocaleDateString([],{weekday:'short'})}</div><div>${d.getDate()}</div>`;
-                btn.onclick = () => {
-                    document.querySelectorAll('.day').forEach(b=>b.classList.remove('active'));
-                    btn.classList.add('active');
-                    load(d.toISOString().split('T')[0]);
-                };
-                cal.appendChild(btn);
-            }
-            load(new Date().toISOString().split('T')[0]);
+function init() {
+    const cal = document.getElementById('cal');
+    for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() + i);
+        const btn = document.createElement('div');
+        btn.className = `day ${i === 0 ? 'active' : ''}`;
+        btn.innerHTML = `<div>${d.toLocaleDateString([], { weekday: 'short' })}</div><div>${d.getDate()}</div>`;
+        btn.onclick = () => {
+            document.querySelectorAll('.day').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            load(d.toISOString().split('T')[0]);
+        };
+        cal.appendChild(btn);
+    }
+    load(new Date().toISOString().split('T')[0]);
+}
+
+async function load(date) {
+    const div = document.getElementById('list');
+    div.innerHTML = "Fetching matches...";
+    try {
+        const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}&s=Soccer`);
+        const data = await res.json();
+
+        if (!data.events) {
+            div.innerHTML = `<div class="no-data">No matches found for ${date}</div>`;
+            return;
         }
 
-        async function load(date) {
-            const div = document.getElementById('list');
-            div.innerHTML = "Fetching matches...";
-            try {
-                // We use a different API endpoint that is more likely to have the "big" games
-                const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${date}`);
-                const data = await res.json();
-                
-                if (!data.events) {
-                    div.innerHTML = `<div class="no-data">The database hasn't updated for ${date} yet. Check back in an hour or try the next day!</div>`;
-                    return;
-                }
+        allGames = data.events.filter(g => {
+            const league = g.strLeague?.toLowerCase() || "";
+            const event = g.strEvent?.toLowerCase() || "";
 
-                allGames = data.events.filter(g => {
-                    const league = g.strLeague.toLowerCase();
-                    const teams = g.strEvent.toLowerCase();
-                    // Priority filter: Liverpool, Porto, NBA, or major European Leagues
-                    return ELITE_LEAGUES.some(el => league.includes(el.toLowerCase())) || 
-                           teams.includes("liverpool") || 
-                           teams.includes("porto");
-                });
+            return (
+                ELITE_LEAGUES.some(l => league.includes(l)) ||
+                event.includes("porto") ||
+                event.includes("liverpool")
+            );
+        });
 
-                render(allGames, date);
-            } catch(e) {
-                div.innerHTML = "Error: GitHub security blocked the data. Try refreshing the page.";
-            }
+        render(allGames, date);
+    } catch (e) {
+        div.innerHTML = "API error. Try again later.";
+    }
+}
+
+function render(list, date) {
+    const div = document.getElementById('list');
+
+    if (!list.length) {
+        div.innerHTML = `<div class="no-data">No elite matches found</div>`;
+        return;
+    }
+
+    div.innerHTML = list.map(g => {
+        let time = "TBD";
+        if (g.strTime) {
+            time = new Date(`${g.dateEvent || date}T${g.strTime}Z`)
+                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         }
 
-        function render(list, date) {
-            const div = document.getElementById('list');
-            if (list.length === 0) {
-                div.innerHTML = `<div class="no-data">No Elite games found for this day. Search for a specific team above.</div>`;
-                return;
-            }
-            div.innerHTML = list.map(g => {
-                const localTime = new Date(`${g.dateEvent || date}T${g.strTime}Z`).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false});
-                return `
-                <div class="game ${g.strSport}">
-                    <div class="info">
-                        <span class="league">${g.strLeague}</span>
-                        <div class="match">${g.strEvent}</div>
-                        <span class="time">${localTime} (Portugal Time)</span>
-                    </div>
-                </div>`;
-            }).join('');
-        }
+        return `
+        <div class="game ${g.strSport}">
+            <div class="info">
+                <span class="league">${g.strLeague}</span>
+                <div class="match">${g.strEvent}</div>
+                <span class="time">${time} (Portugal)</span>
+            </div>
+        </div>`;
+    }).join('');
+}
 
-        function filter() {
-            const q = document.getElementById('search').value.toLowerCase();
-            render(allGames.filter(g => g.strEvent.toLowerCase().includes(q)), "");
-        }
+function filter() {
+    const q = document.getElementById('search').value.toLowerCase();
+    render(allGames.filter(g => g.strEvent.toLowerCase().includes(q)));
+}
 
-        init();
-    </script>
-</body>
-</html>
-
+init();
+</script>
